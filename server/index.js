@@ -3,6 +3,7 @@ import path from 'path';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
+import { MongoClient } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -57,10 +58,28 @@ app.get('/api/weather', async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
+const mongoUri = process.env.MONGODB_URI;
 
 // In-memory message history (kept small)
 const MAX_HISTORY = 100;
 const messageHistory = [];
+let messagesCollection = null;
+
+if (mongoUri) {
+	try {
+		const mongoClient = new MongoClient(mongoUri);
+		await mongoClient.connect();
+		messagesCollection = mongoClient.db('chat').collection('messages');
+		// eslint-disable-next-line no-console
+		console.log('Connected to MongoDB');
+	} catch (err) {
+		// eslint-disable-next-line no-console
+		console.error('MongoDB connection failed, falling back to in-memory history:', err);
+	}
+} else {
+	// eslint-disable-next-line no-console
+	console.log('MONGODB_URI not set, using in-memory history');
+}
 
 // Simple room: all clients share the same channel
 const wss = new WebSocketServer({ server });
@@ -80,7 +99,22 @@ wss.on('connection', (ws) => {
 	ws.send(JSON.stringify({ type: 'whoami', userId }));
 
 	// Send recent history on connect
-	ws.send(JSON.stringify({ type: 'history', messages: messageHistory }));
+	(async () => {
+		try {
+			if (messagesCollection) {
+				const docs = await messagesCollection
+					.find({ type: 'chat' }, { projection: { _id: 0 } })
+					.sort({ timestamp: -1 })
+					.limit(MAX_HISTORY)
+					.toArray();
+				ws.send(JSON.stringify({ type: 'history', messages: docs.reverse() }));
+				return;
+			}
+		} catch {
+			// fall through to in-memory history if database read fails
+		}
+		ws.send(JSON.stringify({ type: 'history', messages: messageHistory }));
+	})();
 
 	// Announce join
 	const joinEvent = { type: 'system', id: uuidv4(), message: `User ${userId.slice(0, 8)} joined` };
@@ -110,6 +144,12 @@ wss.on('connection', (ws) => {
 		messageHistory.push(chatMessage);
 		if (messageHistory.length > MAX_HISTORY) {
 			messageHistory.shift();
+		}
+
+		if (messagesCollection) {
+			messagesCollection.insertOne(chatMessage).catch(() => {
+				// keep chat running even if database write fails
+			});
 		}
 
 		broadcast(chatMessage);
