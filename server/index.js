@@ -67,7 +67,11 @@ let messagesCollection = null;
 
 if (mongoUri) {
 	try {
-		const mongoClient = new MongoClient(mongoUri);
+		// Avoid IPv4/IPv6 "happy eyeballs" races that can break TLS to Atlas from hosts like Render.
+		// See: https://stackoverflow.com/questions/78011218/mongodb-atlas-failing-to-connect-with-node-js
+		const mongoClient = new MongoClient(mongoUri, {
+			autoSelectFamily: false
+		});
 		await mongoClient.connect();
 		messagesCollection = mongoClient.db('chat').collection('messages');
 		// eslint-disable-next-line no-console
@@ -75,6 +79,13 @@ if (mongoUri) {
 	} catch (err) {
 		// eslint-disable-next-line no-console
 		console.error('MongoDB connection failed, falling back to in-memory history:', err);
+		const code = err?.cause?.code ?? err?.cause?.cause?.code;
+		if (code === 'ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') {
+			// eslint-disable-next-line no-console
+			console.error(
+				'Atlas TLS hint: allow your app host in Atlas → Network Access (e.g. 0.0.0.0/0 for testing), confirm MONGODB_URI and URL-encode special characters in the password.'
+			);
+		}
 	}
 } else {
 	// eslint-disable-next-line no-console
