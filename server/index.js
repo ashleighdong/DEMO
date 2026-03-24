@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = http.createServer(app);
 
-// Serve static client
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Serve React client build (created during npm run build)
+app.use(express.static(path.join(__dirname, 'client-dist')));
 
 // Basic healthcheck for Render
 app.get('/healthz', (_req, res) => {
@@ -119,6 +119,11 @@ wss.on('connection', (ws) => {
 		const leaveEvent = { type: 'system', id: uuidv4(), message: `User ${userId.slice(0, 8)} left` };
 		broadcast(leaveEvent);
 	});
+});
+
+// Fallback to client index.html for any other route (SPA)
+app.get('*', (_req, res) => {
+	res.sendFile(path.join(__dirname, 'client-dist', 'index.html'));
 });
 
 server.listen(port, () => {
