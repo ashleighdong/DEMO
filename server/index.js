@@ -19,6 +19,43 @@ app.get('/healthz', (_req, res) => {
 	res.status(200).send('ok');
 });
 
+app.get('/api/weather', async (req, res) => {
+	const apiKey = process.env.OPENWEATHER_API_KEY;
+	const city = typeof req.query.city === 'string' ? req.query.city.trim() : '';
+
+	if (!apiKey) {
+		return res.status(500).json({ error: 'OPENWEATHER_API_KEY is not configured' });
+	}
+
+	if (!city) {
+		return res.status(400).json({ error: 'city query param is required' });
+	}
+
+	const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${encodeURIComponent(apiKey)}&units=imperial`;
+
+	try {
+		const upstreamRes = await fetch(weatherUrl);
+		const upstreamData = await upstreamRes.json();
+
+		if (!upstreamRes.ok) {
+			const msg = typeof upstreamData?.message === 'string' ? upstreamData.message : 'Weather lookup failed';
+			return res.status(upstreamRes.status).json({ error: msg });
+		}
+
+		const payload = {
+			city: upstreamData?.name || city,
+			tempF: upstreamData?.main?.temp,
+			feelsLikeF: upstreamData?.main?.feels_like,
+			description: upstreamData?.weather?.[0]?.description || '',
+			icon: upstreamData?.weather?.[0]?.icon || ''
+		};
+
+		return res.status(200).json(payload);
+	} catch {
+		return res.status(502).json({ error: 'Failed to contact weather provider' });
+	}
+});
+
 const port = process.env.PORT || 3000;
 
 // In-memory message history (kept small)

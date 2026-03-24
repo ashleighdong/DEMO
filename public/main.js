@@ -2,6 +2,9 @@ const statusEl = document.getElementById('status');
 const messagesEl = document.getElementById('messages');
 const formEl = document.getElementById('form');
 const inputEl = document.getElementById('input');
+const weatherFormEl = document.getElementById('weatherForm');
+const weatherCityEl = document.getElementById('weatherCity');
+const weatherOutputEl = document.getElementById('weatherOutput');
 
 const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
 const wsUrl = `${wsProtocol}://${location.host}`;
@@ -61,6 +64,24 @@ function connect() {
 	};
 }
 
+async function fetchWeather(city) {
+	weatherOutputEl.textContent = 'Loading...';
+	try {
+		const res = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
+		const data = await res.json();
+		if (!res.ok) {
+			weatherOutputEl.textContent = `Weather error: ${data.error || 'unknown'}`;
+			return;
+		}
+
+		const desc = typeof data.description === 'string' ? data.description : '';
+		const temp = typeof data.tempF === 'number' ? `${Math.round(data.tempF)}F` : '--';
+		weatherOutputEl.textContent = `${data.city}: ${temp}, ${desc}`;
+	} catch {
+		weatherOutputEl.textContent = 'Weather error: network issue';
+	}
+}
+
 formEl.addEventListener('submit', (e) => {
 	e.preventDefault();
 	const text = inputEl.value.trim();
@@ -69,5 +90,13 @@ formEl.addEventListener('submit', (e) => {
 	inputEl.value = '';
 });
 
+weatherFormEl.addEventListener('submit', (e) => {
+	e.preventDefault();
+	const city = weatherCityEl.value.trim();
+	if (!city) return;
+	fetchWeather(city);
+});
+
 connect();
+fetchWeather(weatherCityEl.value.trim() || 'New York');
 

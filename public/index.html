@@ -13,8 +13,14 @@
 			html, body { height: 100%; margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; }
 			body { display: grid; place-items: center; background: canvas; color: canvastext; }
 			.app { width: min(960px, 100%); height: min(720px, 100%); display: grid; grid-template-rows: auto 1fr auto; border: 1px solid color-mix(in oklab, canvastext 10%, transparent); border-radius: 12px; overflow: hidden; background: color-mix(in oklab, canvas 96%, canvastext 4%); }
-			header { padding: 16px 20px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; background: color-mix(in oklab, canvas 92%, canvastext 8%); }
+			header { padding: 16px 20px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 12px; background: color-mix(in oklab, canvas 92%, canvastext 8%); }
+			.header-left { display: flex; align-items: baseline; gap: 8px; }
 			.status { font-size: 12px; opacity: .8; }
+			.weather { display: flex; align-items: center; gap: 8px; }
+			.weather-form { display: flex; gap: 6px; }
+			.weather-input { width: 120px; padding: 8px; border-radius: 8px; border: 1px solid color-mix(in oklab, canvastext 15%, transparent); background: canvas; color: canvastext; }
+			.weather-btn { padding: 8px 10px; font-size: 12px; border-radius: 8px; border: 0; background: #334155; color: white; cursor: pointer; }
+			.weather-output { font-size: 12px; opacity: .9; min-width: 170px; text-align: right; }
 			.messages { padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 			.msg { padding: 10px 12px; border-radius: 10px; max-width: 75%; width: fit-content; box-shadow: 0 1px 1px rgba(0,0,0,.05); }
 			.msg.me { align-self: flex-end; background: #4f46e5; color: white; }
@@ -29,8 +35,17 @@
 	<body>
 		<div class="app">
 			<header>
-				<div>Chatroom</div>
-				<div class="status" id="status">Connecting…</div>
+				<div class="header-left">
+					<div>Chatroom</div>
+					<div class="status" id="status">Connecting…</div>
+				</div>
+				<div class="weather">
+					<form id="weatherForm" class="weather-form">
+						<input id="weatherCity" class="weather-input" type="text" placeholder="City" value="New York" />
+						<button class="weather-btn" type="submit">Weather</button>
+					</form>
+					<div id="weatherOutput" class="weather-output">--</div>
+				</div>
 			</header>
 			<main id="messages" class="messages" aria-live="polite"></main>
 			<form id="form">
