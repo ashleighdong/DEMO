@@ -3,8 +3,34 @@ import path from 'path';
 import express from 'express';
 import { WebSocketServer } from 'ws';
 import { fileURLToPath } from 'url';
-import { MongoClient } from 'mongodb';
+import { MongoClient, ServerApiVersion } from 'mongodb';
 import { v4 as uuidv4 } from 'uuid';
+
+/** Trim and strip accidental wrapping quotes from env-based URIs. */
+function normalizeMongoUri(raw) {
+	if (typeof raw !== 'string') return '';
+	let uri = raw.trim();
+	if (
+		(uri.startsWith('"') && uri.endsWith('"')) ||
+		(uri.startsWith("'") && uri.endsWith("'"))
+	) {
+		uri = uri.slice(1, -1).trim();
+	}
+	return uri;
+}
+
+/** Log-safe URI for debugging (never log raw passwords). */
+function redactMongoUri(uri) {
+	if (!uri) return '(empty)';
+	try {
+		return uri.replace(
+			/^(mongodb(?:\+srv)?:\/\/)([^:@/]+):([^@]+)@/,
+			(_m, proto, user) => `${proto}${user}:***@`
+		);
+	} catch {
+		return '(unable to redact)';
+	}
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,7 +84,7 @@ app.get('/api/weather', async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-const mongoUri = process.env.MONGODB_URI;
+const mongoUri = normalizeMongoUri(process.env.MONGODB_URI);
 
 // In-memory message history (kept small)
 const MAX_HISTORY = 100;
@@ -67,10 +93,15 @@ let messagesCollection = null;
 
 if (mongoUri) {
 	try {
-		// Avoid IPv4/IPv6 "happy eyeballs" races that can break TLS to Atlas from hosts like Render.
-		// See: https://stackoverflow.com/questions/78011218/mongodb-atlas-failing-to-connect-with-node-js
+		// Atlas from cloud hosts: force IPv4 and disable address-family racing (common TLS fix).
 		const mongoClient = new MongoClient(mongoUri, {
-			autoSelectFamily: false
+			family: 4,
+			autoSelectFamily: false,
+			serverApi: {
+				version: ServerApiVersion.v1,
+				strict: true,
+				deprecationErrors: true
+			}
 		});
 		await mongoClient.connect();
 		messagesCollection = mongoClient.db('chat').collection('messages');
@@ -79,11 +110,17 @@ if (mongoUri) {
 	} catch (err) {
 		// eslint-disable-next-line no-console
 		console.error('MongoDB connection failed, falling back to in-memory history:', err);
+		// eslint-disable-next-line no-console
+		console.error('Diagnostics:', {
+			node: process.version,
+			uriRedacted: redactMongoUri(mongoUri),
+			startsWithSrv: mongoUri.startsWith('mongodb+srv://')
+		});
 		const code = err?.cause?.code ?? err?.cause?.cause?.code;
 		if (code === 'ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR') {
 			// eslint-disable-next-line no-console
 			console.error(
-				'Atlas TLS hint: allow your app host in Atlas → Network Access (e.g. 0.0.0.0/0 for testing), confirm MONGODB_URI and URL-encode special characters in the password.'
+				'Atlas TLS checklist: (1) URL-encode any special chars in the DB password in MONGODB_URI. (2) In Atlas → Database, ensure the cluster is not Paused. (3) User must exist under Database Access with a password (not "certificate only"). (4) URI must be mongodb+srv://... from Atlas "Connect your application", with no angle brackets.'
 			);
 		}
 	}
