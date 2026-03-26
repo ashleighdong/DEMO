@@ -17,6 +17,8 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "*";
 const MONGODB_URI =
   process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/chatroom";
 
+let mongoConnected = false;
+
 const app = express();
 app.use(helmet());
 app.use(
@@ -29,7 +31,8 @@ app.use(morgan("dev"));
 app.use(express.json());
 
 app.get("/healthz", (req, res) => {
-  res.json({ ok: true });
+  // Health checks must be fast; MongoDB may not be ready yet on free instances.
+  res.json({ ok: true, mongoConnected });
 });
 
 const httpServer = http.createServer(app);
@@ -51,10 +54,15 @@ io.on("connection", (socket) => {
     socket.data.roomId = nextRoomId;
     socket.join(nextRoomId);
 
-    const messages = await Message.find({ roomId: nextRoomId })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .lean();
+    let messages = [];
+    try {
+      messages = await Message.find({ roomId: nextRoomId })
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+    } catch (err) {
+      console.error("join_room failed:", err);
+    }
 
     // Send oldest->newest for nicer UI rendering.
     socket.emit("messages", messages.reverse());
@@ -68,27 +76,45 @@ io.on("connection", (socket) => {
     if (!nextUsername || !nextContent) return;
     if (nextContent.length > 1000) return;
 
-    const created = await Message.create({
-      roomId: nextRoomId,
-      username: nextUsername,
-      content: nextContent,
-    });
-
-    io.to(nextRoomId).emit("new_message", created.toObject());
+    try {
+      const created = await Message.create({
+        roomId: nextRoomId,
+        username: nextUsername,
+        content: nextContent,
+      });
+      io.to(nextRoomId).emit("new_message", created.toObject());
+    } catch (err) {
+      console.error("send_message failed:", err);
+    }
   });
 });
 
-async function main() {
-  await mongoose.connect(MONGODB_URI);
-  console.log("Connected to MongoDB");
-
+function startServer() {
   httpServer.listen(PORT, () => {
     console.log(`Server listening on port ${PORT}`);
   });
 }
 
-main().catch((err) => {
-  console.error("Fatal startup error:", err);
-  process.exit(1);
-});
+async function connectToMongoWithRetry() {
+  // Keep the service up even if Mongo takes a while to come online.
+  for (let attempt = 1; attempt <= Infinity; attempt++) {
+    try {
+      await mongoose.connect(MONGODB_URI);
+      mongoConnected = true;
+      console.log("Connected to MongoDB");
+      return;
+    } catch (err) {
+      mongoConnected = false;
+      const waitMs = Math.min(10000, 1000 * attempt);
+      console.error(
+        `MongoDB connection failed (attempt ${attempt}). Retrying in ${waitMs}ms:`,
+        err?.message || err
+      );
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
+startServer();
+connectToMongoWithRetry();
 
