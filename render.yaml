@@ -1,0 +1,15 @@
+services:
+  - type: web
+    runtime: node
+    name: chatroom-backend
+    plan: starter
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm run start
+    healthCheckPath: /healthz
+    envVars:
+      - key: MONGODB_URI
+        sync: false # Set in Render Dashboard (MongoDB Atlas or local Mongo)
+      - key: CLIENT_ORIGIN
+        sync: false # Set to your frontend URL (e.g. https://your-frontend.onrender.com)
+
